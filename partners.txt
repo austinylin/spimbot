@@ -1,2 +1,5 @@
 # If you want this MP graded, put your (and your partner's)
 # NetIDs below, one per line.
+lin124
+lou13
+getty3
