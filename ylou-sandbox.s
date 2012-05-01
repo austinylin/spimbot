@@ -7,32 +7,66 @@
     F180:   .float 180.0
     newline:.asciiz "\n"        # useful for printing commands
     star:   .asciiz "*"
-    # BOARD 1 IS THE COMPLETED BOARD
-    board1: .word 128 8 256 16 32 64 4 2 1 64 32 4 1 128 2 8 16 256 1 2 16 4 8 256 32 64 128 32 16 1 64 256 4 2 128 8 4 256 2 128 16 8 64 1 32 8 128 64 32 2 1 16 256 4 2 1 128 8 4 16 256 32 64 16 4 32 256 64 128 1 8 2 256 64 8 2 1 32 128 4 16
-    # BOARD 2 JUST HAS ONE ROW MISSING
-    board2: .word 511 511 511 511 511 511 511 511 511 64 32 4 1 128 2 8 16 256 1 2 16 4 8 256 32 64 128 32 16 1 64 256 4 2 128 8 4 256 2 128 16 8 64 1 32 8 128 64 32 2 1 16 256 4 2 1 128 8 4 16 256 32 64 16 4 32 256 64 128 1 8 2 256 64 8 2 1 32 128 4 16
-    # BOARD 2 JUST HAS ONE COLUMN MISSING
-    board3: .word 511 8 256 16 32 64 4 2 1 511 32 4 1 128 2 8 16 256 511 2 16 4 8 256 32 64 128 511 16 1 64 256 4 2 128 8 511 256 2 128 16 8 64 1 32 511 128 64 32 2 1 16 256 4 511 1 128 8 4 16 256 32 64 511 4 32 256 64 128 1 8 2 511 64 8 2 1 32 128 4 16
-    board4: # BOARD 4 HAS 3 SQUARES THAT HAVE 1 NUMBER MISSING TO TEST THE SQUARE PART.
-    .word 128 8 256 511 511 511 511 511 511 
-    .word 64 32 4 511 511 511 511 511 511 
-    .word 511 2 16 511 511 511 511 511 511
-    .word 511 511 511 64 511 256 511 511 511 
-    .word 511 511 511 128 32 4 511 511 511 
-    .word 511 511 511 8 16 2 511 511 511 
-    .word 511 511 511 511 511 511 128 32 16 
-    .word 511 511 511 511 511 511 64 8 511 
-    .word 511 511 511 511 511 511 1 2 256
-    # board 5 is the actual test for this MP
-    board5: .word 128 511 511 16 511 511 4 2 511 64 511 4 1 511 511 8 511 511 1 2 511 511 511 256 511 511 128 32 16 511 511 256 4 511 128 511 511 256 511 511 511 511 511 1 511 511 128 511 32 2 511 511 256 4 2 511 511 8 511 511 511 32 64 511 511 32 511 511 128 1 511 2 511 64 8 511 511 32 511 511 16
 
-    flag: .word 0x8
+    puzzle_flag: .word 0
+    puzzle: .space 324
 
 #~~~~~~~~~~~~~~~~~~~ TEXT SECTION ~~~~~~~~~~~~~~~~~~~#
 
 .text
 #################### MAIN ####################   
-main:   
+main:     
+    # flag for bonk, kick, sudoku, and timer and global interrupt enable
+    li      $t4, 0xF001     
+    mtc0    $t4, $12            # Enable interrupt mask (Status register)
+    la      $t0, puzzle($zero)
+    sw      $t0, 0xffff00e8($zero)
+    loop:
+    jal drive_kick # if $t0 > $zero then solve_puzzle
+    j loop
+
+#+++++++++ SOLVE PUZZLE BRANCH +++++++++#
+
+solve_puzzle:
+  la    $a0, puzzle($zero)
+  jal   solve_board        # jump to solve_board and save position to $ra
+  
+  la    $a0, puzzle($zero)
+  sw    $a0, 0xffff00ec($zero) #turn in the puzzle
+ 
+  sw    $zero, puzzle_flag
+  la    $t0, puzzle($zero)   
+  sw    $t0, 0xffff00e8($zero)
+  j     kick_check       # jump to loop
+
+solve_board:
+  sub   $sp, $sp, 16
+  sw    $ra, 0($sp) # save $ra on stack
+  sw    $s0, 4($sp)   # save $s0 on stack <--- check out use of $s register!!
+  sw    $s1, 8($sp)
+  sw  $s2, 12($sp)    
+
+  move  $s0, $a0
+main_loop:
+  move  $a0, $s0
+  jal rule1     ##changed = rule1(main_board)
+  move  $s1, $v0
+  move  $a0, $s0
+  jal   rule2     ##changed |= rule2(main_board)
+  move  $s2, $v0      
+  or  $s1, $s1, $s2   
+  beq $s1, 1, main_loop ##do while(changed)
+
+  lw    $ra, 0($sp)   # restore $ra
+  lw    $s0, 4($sp)   # restore $s0 
+  lw    $s1, 8($sp)     ## restore $s1
+  lw  $s2, 12($sp)  ##restore $s2
+
+  add   $sp, $sp, 16
+  jr  $ra
+    
+#+++++++++ DRIVE AND KICK BRANCH +++++++++#
+drive_kick:
     sub     $sp, $sp, 24            # save $s registers on stack
     sw      $s0, 0($sp)             #
     sw      $s1, 4($sp)             #
@@ -40,25 +74,7 @@ main:
     sw      $s3, 12($sp)            #
     sw      $s4, 16($sp)            #
     sw      $ra, 20($sp) 
-  
-    # flag for bonk, kick, sudoku, and timer and global interrupt enable
-    li      $t4, 0xF001     
-    mtc0    $t4, $12            # Enable interrupt mask (Status register)
-    
-loop:
-    lw      $t0, flag
-    
-    andi    $t1, $t0, 0x8
-    bgt     $t1, $zero, drive_kick # if $t0 > $zero then solve_puzzle
 
-    j loop
-
-#+++++++++ SOLVE PUZZLE BRANCH +++++++++#
-solve_puzzle:
-    j     loop 
-    
-#+++++++++ DRIVE AND KICK BRANCH +++++++++#
-drive_kick:
     li      $s0, 0                # ball counter
 ball_search:
     sw      $s0, 0xffff00d0         # set query to ball counter
@@ -85,6 +101,10 @@ ball_search:
     
 kick_check:                         # spimbot will stop when he kicks a ball
     lw      $s1, 0xffff0010         # load spimbot velocity
+   
+    lw      $t0, puzzle_flag
+    bgt     $t0, $zero, solve_puzzle
+
     bne     $s1, 0, kick_check      # if he hasn't been stopped, keep polling
     
 search_end:
@@ -150,41 +170,6 @@ pos_x:
 
     jr      $ra
 
-solve_board:
-    sub     $sp, $sp, 8
-    sw      $ra, 0($sp) # save $ra on stack
-    sw      $s0, 4($sp)     # save $s0 on stack <--- check out use of $s register!!
-    move    $s0, $a0
-main_loop:
-    move    $a0, $s0
-    jal     rule1
-    bne     $v0, 0, main_loop   # keep running rule1 until no more changes
-
-    lw      $ra, 0($sp)     # restore $ra
-    lw      $s0, 4($sp)     # restore $s0 
-    add     $sp, $sp, 8
-    jr      $ra
-
-#################### PRINT_NEWLINE ####################     
-print_newline:
-    lb      $a0, newline($0)            # read the newline char
-    li      $v0, 11            # load the syscall option for printing chars
-    syscall                  # print the char
-
-    jr      $ra              # return to the calling procedure
-
-
-#################### PRINT_INT_AND_SPACE ####################     
-print_int_and_space:
-    li      $v0, 1             # load the syscall option for printing ints
-    syscall                  # print the element
-
-    li      $a0, 32            # print a black space (ASCII 32)
-    li      $v0, 11            # load the syscall option for printing chars
-    syscall                  # print the char
-
-    jr      $ra              # return to the calling procedure
-
 
 #################### SINGLETON ####################     
 is_singleton:
@@ -197,7 +182,6 @@ is_singleton:
 is_singleton_done:
     jr      $ra
 
-
 #################### GET_SINGLETON ####################     
 get_singleton:
     li      $v0, 0          # i
@@ -209,60 +193,6 @@ gs_loop:
     blt     $v0, 9, gs_loop     # repeat if (i < 9)
 get_singleton_done:
     jr      $ra
-
-
-#################### PRINT BOARD ####################     
-print_board:
-    sub     $sp, $sp, 20
-    sw      $ra, 0($sp)     # save $ra and free up 4 $s registers for
-    sw      $s0, 4($sp)     # i
-    sw      $s1, 8($sp)     # j
-    sw      $s2, 12($sp)        # the function argument
-    sw      $s3, 16($sp)        # the computed pointer (which is used for 2 calls)
-    move    $s2, $a0
-
-    li      $s0, 0          # i
-pb_loop1:
-    li      $s1, 0          # j
-pb_loop2:
-    mul     $t0, $s0, 9     # i*9
-    add     $t0, $t0, $s1       # (i*9)+j
-    sll     $t0, $t0, 2     # ((i*9)+j)*4
-    add     $s3, $s2, $t0
-    lw      $a0, 0($s3)
-    jal     is_singleton        
-    beq     $v0, 0, pb_star     # if it was not a singleton, jump
-    lw      $a0, 0($s3)
-    jal     get_singleton       
-    add     $a0, $v0, 1     # print the value + 1
-    li      $v0, 1
-    syscall
-    j       pb_cont
-
-pb_star:      
-    li      $v0, 4          # print a "*"
-    la      $a0, star
-    syscall
-
-pb_cont:  
-    add     $s1, $s1, 1     # j++
-    blt     $s1, 9, pb_loop2
-
-    li      $v0, 4          # at the end of a line, print a newline char.
-    la      $a0, newline
-    syscall 
-
-    add     $s0, $s0, 1     # i++
-    blt     $s0, 9, pb_loop1
-
-    lw      $ra, 0($sp)     # restore registers and return
-    lw      $s0, 4($sp)
-    lw      $s1, 8($sp)
-    lw      $s2, 12($sp)
-    lw      $s3, 16($sp)
-    add     $sp, $sp, 20
-    jr      $ra
-
 
   ## int get_square_begin(int index) {
   ##   return (index/GRIDSIZE) * GRIDSIZE;
@@ -447,6 +377,233 @@ r1_loop2_bot:
     add     $sp, $sp, 32
     jr      $ra
 
+
+rule2:
+  sub $sp, $sp, 48            ## move the stack pointer
+  sw  $ra, 0($sp)           ## store the ra register and free up s registers
+  sw  $s0, 4($sp)
+  sw  $s1, 8($sp)
+  sw  $s2, 12($sp)
+  sw  $s3, 16($sp)
+  sw  $s4, 20($sp)
+  sw  $s5, 24($sp)
+  sw  $s6, 28($sp)
+  sw  $s7, 32($sp)
+
+                  ## put the parameter into the s register
+  li  $s0, 0              ## i
+  li  $s1, 0              ## j
+  li  $s2, 0              ## k
+  li  $s3, 0              ## l
+  li  $s4, 0              ## changed = false
+  move  $s5, $a0            ##board
+  
+
+                  ## $s7 holds board[i][j] for each iteration of the loop
+  li  $t0, 1
+  li  $t1, 9
+  sll $s6, $t0, $t1
+  sub $s6, $s6, 1           ## ALL_VALUES 
+
+
+rule_2_Ifor:
+  
+  bge $s0, 9, rule_2_done         ## for (int i = 0 ; i < GRID_SQUARED ; ++ i) 
+
+rule_2_Jfor:
+  
+  li  $s2, 0
+  li  $s3, 0
+  bge $s1, 9, rule_2_Ifor_increment       ## for (int j = 0 ; j < GRID_SQUARED ; ++ j) 
+                  
+  move  $a0, $s5            # board
+  move  $a1, $s0            # i
+  move  $a2, $s1            # j
+  jal board_address
+
+  lw  $s7, 0($v0)           ## board[i][j]
+  move  $a0, $s7
+
+  jal is_singleton            ## if (is_singleton(value)) {
+
+  li  $t0, 1
+  beq $v0, $t0, rule_2_Jfor_increment       ## continue
+
+  li  $t0, 0              ## i_sum
+  li  $t1, 0              ## j_sum
+
+rule_2_Kfor:
+  
+  bge $s2, 9, rule_2_done_k_loop        ## for (int k = 0 ; k < GRID_SQUARED ; ++ k) 
+
+  beq $s2, $s1, rule_2_kif2         ## if (k != j)
+  move  $a0, $s5
+  move  $a1, $s0
+  move  $a2, $s2
+  sw  $t0, 36($sp)
+  sw  $t1, 40($sp)
+  jal board_address           ##get place of board[i][k]
+  lw  $t0, 36($sp)            ##restore i_sum
+  lw  $t1, 40($sp)            ##restore j_sum
+  lw  $t5, 0($v0)             ##board[i][k]
+  or  $t1, $t1, $t5           ## j_sum |= board[i][k];
+
+rule_2_kif2:
+
+  beq $s2, $s0, rule_2_Kfor_increment       ## if (k != i) 
+  move  $a0, $s5
+  move  $a1, $s2
+  move  $a2, $s1
+  sw  $t0, 36($sp)            ##store i_sum
+  sw  $t1, 40($sp)            ##store j_sum
+  jal   board_address           ##get place of board[k][j]
+  lw  $t0, 36($sp)            ## restore i_sum
+  lw  $t1, 40($sp)            ## restore j_sum
+  lw  $t5, 0($v0)           ## value of board[k][j]
+  or  $t0, $t0, $t5           ## i_sum |= board[k][j];
+
+  
+rule_2_Kfor_increment:
+
+  add   $s2, $s2, 1           ## k++
+  j rule_2_Kfor           ## go do the K loop again
+
+
+rule_2_done_k_loop: 
+
+  beq $s6, $t1, rule_2_if2          ## if (ALL_VALUES != j_sum
+                  ##board[i][j] = ALL_VALUES & ~j_sum;
+  move  $a0, $s5
+  move  $a1, $s0
+  move  $a2, $s1
+  sw  $t0, 36($sp)            ## store i_sum
+  sw  $t1, 40($sp)            ## store j_sum
+  jal board_address           ## get place of board[i][j]
+  lw  $t0, 36($sp)            ## restore i_sum
+  lw  $t1, 40($sp)            ## restore j_sum
+  not $t3, $t1            ## ~j_sum           
+  and   $t3, $t3, $s6           ## ALL_VALUES & ~j_sum
+  sw  $t3, 0($v0)           ## load it at board[i][j]
+  
+  
+  li  $s4, 1              ##changed = true;
+  j rule_2_Jfor_increment         ## continue
+
+rule_2_if2:
+
+  beq $s6, $t0, rule_2_over_if        ## else if (ALL_VALUES != i_sum)
+                  ##board[i][j] = ALL_VALUES & ~i_sum 
+  move  $a0, $s5
+  move  $a1, $s0
+  move  $a2, $s1
+  sw  $t0, 36($sp)            ##store i_sum
+  sw  $t1, 40($sp)            ## store j_sum
+  jal board_address           ## get place of board[i][j]
+  lw  $t0, 36($sp)            ## restore i_sum
+  lw  $t1, 40($sp)            ## restore j_sum
+  not $t3, $t0            ## ~i_sum
+  and $t3, $t3, $s6           ## ALL_VALUES & i_sum
+  sw  $t3, 0($v0)             ## store it at board[i][j]
+  
+
+  li  $s4, 1              ##changed = true;
+  j rule_2_Jfor_increment         ## continue
+
+rule_2_over_if:
+
+  move  $a0, $s0            ## int ii = get_square_begin(i)
+  jal   get_square_begin
+  move  $s2, $v0
+
+  move  $a0, $s1            ## int jj = get_square_begin(j)
+  jal get_square_begin
+  move  $s3, $v0
+  move  $t0, $s2            ## ii
+  move  $t1, $v0            ## jj
+
+  li  $t3, 0              ## sum = 0
+
+rule_2_iiLoop:
+  add $t5, $t0, 3
+  bge $s2, $t5, rule_2_iiLoop_done        ## for (int k = ii ; k < ii + GRIDSIZE ; ++ k) 
+rule_2_jjLoop:
+  
+  add $t4, $t1, 3
+  bge $s3, $t4, rule_2_incrementii        ## for (int l = jj ; l < jj + GRIDSIZE ; ++ l)
+
+  bne $s2, $s0, over_jjif         ## if ((k == i) && (l == j))  
+  bne $s3, $s1, over_jjif
+  j rule_2_Jfor_increment         ## continue
+
+over_jjif:
+
+  move  $a0, $s5
+  move  $a1, $s2
+  move  $a2, $s3
+  sw  $t3, 36($sp)
+  sw  $t0, 40($sp)
+  sw  $t1, 44($sp)
+  
+                  ## sum |= board[k][l]
+  
+  jal board_address
+  lw  $t3, 36($sp)
+  lw  $t0, 40($sp)
+  lw  $t1, 44($sp)
+
+  lw  $t7, 0($v0)
+  or  $t3, $t7, $t3           ## sum |= board[k][l];                  
+
+rule_2_incrementjj:
+  add $s3,$s3,1           ## l++
+  j rule_2_jjLoop           ## do the inner part of the loop again
+
+rule_2_incrementii:
+  add $s2, $s2, 1           ## k++
+  move  $s3, $t1            ## l = jj
+  j rule_2_iiLoop           ## do the loop again
+
+rule_2_iiLoop_done:
+  beq $s6,$t3, rule_2_Jfor_increment        ## if (ALL_VALUES != sum)
+  move  $a0, $s5            ## board[i][j] = ALL_VALUES & ~sum;
+  move  $a1, $s0
+  move  $a2, $s1
+  sw  $t3, 36($sp)
+  jal board_address
+  lw  $t3, 36($sp)
+  not $t3, $t3
+  and $t0, $s6, $t3
+  sw  $t0, 0($v0)
+
+rule_2_Jfor_increment:
+  
+  add $s1, $s1, 1           ## j++
+  j rule_2_Jfor           ## to back to inner for loop
+
+rule_2_Ifor_increment:
+
+  add $s0, $s0, 1           ##i++
+  li  $s1, 0              ##j = 0
+  li  $s2, 0              ##k = 0
+  li  $s3, 0              ##l = 0
+  j rule_2_Ifor           ## go back to the for loop
+
+
+rule_2_done:
+  lw  $ra, 0($sp)           ##restore the s registers and the stack pointer and return
+  lw  $s0, 4($sp)
+  lw  $s1, 8($sp)
+  lw  $s2, 12($sp)
+  lw  $s3, 16($sp)
+  lw  $s4, 20($sp)
+  lw  $s5, 24($sp)
+  lw  $s6, 28($sp)
+  lw  $s7, 32($sp)
+  
+  add   $sp,$sp,48
+  move  $v0, $s4            ## return changed
+  jr  $ra
+
 #~~~~~~~~~~~~~~~~~~~ KERNEL DATA SECTION ~~~~~~~~~~~~~~~~~~~#
 
 .kdata 
@@ -481,10 +638,10 @@ interrupt_dispatch:             # Interrupt:
     and     $a0, $k0, 0x2000    # is there a kick interrupt?
     bne     $a0, 0, kick_interrupt  
 
-    and     $a0, $k0, 0x4000    # is there a kick interrupt?
+    and     $a0, $k0, 0x8000    # is there a kick interrupt?
     bne     $a0, 0, timer_interrupt  
 
-    and     $a0, $k0, 0x8000    # is there a kick interrupt?
+    and     $a0, $k0, 0x4000    # is there a kick interrupt?
     bne     $a0, 0, sudoku_interrupt  
 
     li      $v0, 4              # unhandled interrupt types
@@ -503,22 +660,88 @@ bonk_interrupt:
 
 #################### KICK INTERRUPT ####################  
 kick_interrupt:
-    li      $a1, 1
-    sw      $a1, 0xffff0064($zero)      # acknowledge interrupt
+    li  $a1, 0
+search_loop:                    # check every ball for kicking
+    bgt $a1, 10, search_loop_done
 
-    b       interrupt_dispatch      # see if other interrupts are waiting
+    sw  $a1, 0xffff00d0         # set query to a1
+    lw  $a0, 0xffff00e4         # can the ball be kicked?
+
+    beq $a0, 1, search_loop_done    # if it can, we are done searching
+    
+    add $a1, $a1, 1                 # check next ball
+    b   search_loop
+
+search_loop_done:
+    sw  $a1, 0xffff00d0         # set query to ball counter
+
+    lw  $a0, 0xffff00d4         # ball x coordinate
+    li  $a1, 300                # goal x coordinate
+    sub $a0, $a1, $a0           # delta x
+
+    lw  $a1, 0xffff00d8         # ball y coordinate
+    li  $k0, 150                # goal y coordinate
+    sub $a1, $k0, $a1           # delta y
+
+    la      $k0, save       # save all the caller-saved registers used 
+    sw  $ra, 8($k0)         # in the arctan call.   
+    sw  $v0, 12($k0)            # honestly, we should save all of the caller
+    sw  $t0, 16($k0)            # saved registers
+    sw      $t1, 20($k0)            
+    s.s     $f0, 24($k0)            # save the floating point registers used
+    s.s     $f1, 28($k0)            # by arctan, for good measure.
+    s.s     $f2, 32($k0)            
+    s.s     $f3, 36($k0)            # s.s is a load into a floating point register
+    s.s     $f4, 40($k0)            
+    s.s     $f5, 44($k0)            
+    s.s     $f6, 48($k0)            
+    s.s     $f7, 52($k0)            
+    s.s     $f8, 56($k0)            
+    sw      $sp, 60($k0)            # save stack pointer
+    la  $sp, kstack     # use the kernel stack (always start from top)
+
+    la      $t0, arctan             
+    jalr    $t0             # calculate kick angle
+    sw  $v0, 0xffff00c4($zero)      # set kick orientation
+
+    lw      $ra, 8($k0)         # restore all registers used in the arctan call
+    lw  $v0, 12($k0)            
+    lw  $t0, 16($k0)
+    lw  $t1, 20($k0)
+    l.s     $f0, 24($k0)            # restore the floating point registers used
+    l.s     $f1, 28($k0)            # by arctan
+    l.s     $f2, 32($k0)            
+    l.s     $f3, 36($k0)            # l.f is a load into a floating point register
+    l.s     $f4, 40($k0)            
+    l.s     $f5, 44($k0)            
+    l.s     $f6, 48($k0)            
+    l.s     $f7, 52($k0)            
+    l.s     $f8, 56($k0)            
+    lw      $sp, 60($k0)            # restore  stack pointer
+
+    li  $a1, 99
+    sw  $a1, 0xffff00c8($zero)      # set the energy
+
+    li  $a1, 1
+    sw  $a1, 0xffff0064($zero)      # acknowledge interrupt
+
+    b   interrupt_dispatch      # see if other interrupts are waiting
+
 
 #################### TIMER INTERRUPT ####################  
 timer_interrupt:
     li      $a1, 1
-    sw      $a1, 0xffff0068($zero)      # acknowledge interrupt
+    sw      $a1, 0xffff006c($zero)      # acknowledge interrupt
 
     b       interrupt_dispatch
 
 #################### SUDOKU INTERRUPT ####################  
 sudoku_interrupt:
+  li    $a0, 1
+  sw    $a0, puzzle_flag
+
     li      $a1, 1
-    sw      $a1, 0xffff006c($zero)      # acknowledge interrupt
+    sw      $a1, 0xffff0068($zero)      # acknowledge interrupt
 
     b       interrupt_dispatch
 
