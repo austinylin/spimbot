@@ -10,6 +10,7 @@
 
     puzzle_flag: .word 0
     puzzle: .space 324
+ 
 
 #~~~~~~~~~~~~~~~~~~~ TEXT SECTION ~~~~~~~~~~~~~~~~~~~#
 
@@ -590,6 +591,7 @@ rule_2_Ifor_increment:
 
 
 rule_2_done:
+  move  $v0, $s4            ## return changed
   lw  $ra, 0($sp)           ##restore the s registers and the stack pointer and return
   lw  $s0, 4($sp)
   lw  $s1, 8($sp)
@@ -601,7 +603,7 @@ rule_2_done:
   lw  $s7, 32($sp)
   
   add   $sp,$sp,48
-  move  $v0, $s4            ## return changed
+  # move  $v0, $s4            ## return changed
   jr  $ra
 
 #~~~~~~~~~~~~~~~~~~~ KERNEL DATA SECTION ~~~~~~~~~~~~~~~~~~~#
@@ -660,7 +662,7 @@ bonk_interrupt:
 
 #################### KICK INTERRUPT ####################  
 kick_interrupt:
-    li  $a1, 0
+   li  $a1, 0
 search_loop:                    # check every ball for kicking
     bgt $a1, 10, search_loop_done
 
